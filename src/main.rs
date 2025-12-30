@@ -1,7 +1,8 @@
 use std::ffi::OsStr;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::{env, io};
+use std::{env, fs, io};
 
 fn parse_args() -> Result<(String, PathBuf), String> {
     let usage = "Usage: rgrep <pattern> <path>".to_string();
@@ -68,19 +69,52 @@ fn collect_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(files_result)
 }
 
-fn main() {
-    match parse_args() {
-        Ok((pattern, path)) => {
-            println!("pattern: {} - path: {}", pattern, &path.display());
-            if let Ok(files) = collect_files(&path) {
-                for file in files.iter().take(5) {
-                    println!("file: {}", file.display());
+fn print_matches(pattern: &str, files: &[PathBuf]) {
+    for path in files {
+        let file = match fs::File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Error opening file {}. {}", path.display(), e);
+                continue;
+            }
+        };
+        for line_attempt in io::BufReader::new(file).lines().enumerate() {
+            let (number, line) = match line_attempt {
+                (line_number, Ok(line)) => (line_number + 1, line),
+                (line_number, Err(e)) => {
+                    eprintln!(
+                        "Error reading file {} at line {}. {}",
+                        path.display(),
+                        line_number + 1,
+                        e
+                    );
+                    continue;
                 }
+            };
+
+            if line.contains(pattern) {
+                println!("{}:{}:{}", path.display(), number, line);
             }
         }
+    }
+}
+
+fn main() {
+    let (pattern, path) = match parse_args() {
+        Ok((pattern, path)) => (pattern, path),
         Err(e) => {
             eprintln!("{e}");
             exit(2);
         }
-    }
+    };
+
+    let files = match collect_files(&path) {
+        Ok(files) => files,
+        Err(e) => {
+            eprintln!("{e}");
+            exit(2);
+        }
+    };
+
+    print_matches(&pattern, &files);
 }
