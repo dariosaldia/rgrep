@@ -1,21 +1,34 @@
+use regex::Regex;
 use std::ffi::OsStr;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::{env, fs, io};
 
-fn parse_args() -> Result<(String, PathBuf), String> {
-    let usage = "Usage: rgrep <pattern> <path>".to_string();
+fn parse_args() -> Result<(bool, String, PathBuf), String> {
+    let usage = "Usage: rgrep [--regex] <pattern> <path>".to_string();
 
     let mut args = env::args();
 
     args.next(); // Skip executable path
 
-    let pattern = args.next().ok_or(usage.clone())?;
+    // read first argument
+    let pattern_or_regex_mode = args.next().ok_or(usage.clone())?;
 
+    // find out if user wants regex search
+    let regex_mode = pattern_or_regex_mode == "--regex";
+
+    let pattern = if regex_mode {
+        // if user wants regex search we must read the second argument
+        args.next().ok_or(usage.clone())?
+    } else {
+        pattern_or_regex_mode
+    };
+
+    // read third argument
     let path = args.next().map(|s| PathBuf::from(s)).ok_or(usage)?;
 
-    Ok((pattern, path))
+    Ok((regex_mode, pattern, path))
 }
 
 fn collect_files(root: &Path) -> io::Result<Vec<PathBuf>> {
@@ -69,7 +82,10 @@ fn collect_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(files_result)
 }
 
-fn print_matches(pattern: &str, files: &[PathBuf]) {
+fn print_matches<F>(test_match: F, files: &[PathBuf])
+where
+    F: Fn(&str) -> bool,
+{
     for path in files {
         let file = match fs::File::open(path) {
             Ok(f) => f,
@@ -92,7 +108,7 @@ fn print_matches(pattern: &str, files: &[PathBuf]) {
                 }
             };
 
-            if line.contains(pattern) {
+            if test_match(&line) {
                 println!("{}:{}:{}", path.display(), number, line);
             }
         }
@@ -100,8 +116,8 @@ fn print_matches(pattern: &str, files: &[PathBuf]) {
 }
 
 fn main() {
-    let (pattern, path) = match parse_args() {
-        Ok((pattern, path)) => (pattern, path),
+    let (regex_mode, pattern, path) = match parse_args() {
+        Ok((regex_mode, pattern, path)) => (regex_mode, pattern, path),
         Err(e) => {
             eprintln!("{e}");
             exit(2);
@@ -116,5 +132,18 @@ fn main() {
         }
     };
 
-    print_matches(&pattern, &files);
+    let matcher: Box<dyn Fn(&str) -> bool> = if regex_mode {
+        let regex = match Regex::new(&pattern) {
+            Ok(regex) => regex,
+            Err(e) => {
+                eprintln!("Regex not valid: {}", e);
+                exit(2);
+            }
+        };
+        Box::new(move |line: &str| regex.is_match(line))
+    } else {
+        Box::new(|line: &str| line.contains(&pattern))
+    };
+
+    print_matches(matcher.as_ref(), &files);
 }
