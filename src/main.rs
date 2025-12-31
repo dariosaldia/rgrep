@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use regex::Regex;
 use std::ffi::OsStr;
 use std::io::BufRead;
@@ -82,35 +83,42 @@ fn collect_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(files_result)
 }
 
-fn print_matches<F>(test_match: F, files: &[PathBuf])
+fn print_matches<F>(test_match: &F, files: &[PathBuf])
 where
-    F: Fn(&str) -> bool,
+    F: Fn(&str) -> bool + Send + Sync + ?Sized,
 {
-    for path in files {
-        let file = match fs::File::open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("Error opening file {}. {}", path.display(), e);
+    files.par_iter().for_each(|path| {
+        scan_one_file(test_match, path.as_path());
+    });
+}
+
+fn scan_one_file<F>(test_match: &F, path: &Path)
+where
+    F: Fn(&str) -> bool + Send + Sync + ?Sized,
+{
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Error opening file {}. {}", path.display(), e);
+            return;
+        }
+    };
+    for line_attempt in io::BufReader::new(file).lines().enumerate() {
+        let (number, line) = match line_attempt {
+            (line_number, Ok(line)) => (line_number + 1, line),
+            (line_number, Err(e)) => {
+                eprintln!(
+                    "Error reading line {} from file {}. {}",
+                    line_number + 1,
+                    path.display(),
+                    e
+                );
                 continue;
             }
         };
-        for line_attempt in io::BufReader::new(file).lines().enumerate() {
-            let (number, line) = match line_attempt {
-                (line_number, Ok(line)) => (line_number + 1, line),
-                (line_number, Err(e)) => {
-                    eprintln!(
-                        "Error reading file {} at line {}. {}",
-                        path.display(),
-                        line_number + 1,
-                        e
-                    );
-                    continue;
-                }
-            };
 
-            if test_match(&line) {
-                println!("{}:{}:{}", path.display(), number, line);
-            }
+        if test_match(&line) {
+            println!("{}:{}:{}", path.display(), number, line);
         }
     }
 }
@@ -132,7 +140,7 @@ fn main() {
         }
     };
 
-    let matcher: Box<dyn Fn(&str) -> bool> = if regex_mode {
+    let matcher: Box<dyn Fn(&str) -> bool + Send + Sync> = if regex_mode {
         let regex = match Regex::new(&pattern) {
             Ok(regex) => regex,
             Err(e) => {
@@ -140,9 +148,9 @@ fn main() {
                 exit(2);
             }
         };
-        Box::new(move |line: &str| regex.is_match(line))
+        Box::new(move |line| regex.is_match(line))
     } else {
-        Box::new(|line: &str| line.contains(&pattern))
+        Box::new(move |line| line.contains(&pattern))
     };
 
     print_matches(matcher.as_ref(), &files);
