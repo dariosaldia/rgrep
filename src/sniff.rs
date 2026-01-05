@@ -1,14 +1,10 @@
 use std::io::Read;
-use std::path::Path;
-use std::{fs, io, str};
+use std::{io, str};
 
 const NUMBER_OF_BYTES_TO_SNIFF: usize = 4096;
 const NUL_BYTE: u8 = b'\x00';
 
-pub fn is_text_file(file_path: &Path) -> io::Result<bool> {
-    // Try to open the file
-    let mut file = fs::File::open(file_path)?;
-
+pub fn is_text_file(file: &mut impl Read) -> io::Result<bool> {
     // Instantiate the sized byte array filled with zeros to hold the file-sniffed-data
     let mut buf = [0; NUMBER_OF_BYTES_TO_SNIFF];
 
@@ -34,7 +30,7 @@ pub fn is_text_file(file_path: &Path) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{ErrorKind, Write};
+    use std::io::{Seek, Write};
     use tempfile::NamedTempFile;
 
     #[test]
@@ -43,7 +39,9 @@ mod tests {
 
         temp_file.write_all(b"Hello\nWorld\n").unwrap();
 
-        assert!(is_text_file(temp_file.path()).unwrap());
+        temp_file.rewind().unwrap();
+
+        assert!(is_text_file(temp_file.as_file_mut()).unwrap());
     }
 
     #[test]
@@ -60,7 +58,9 @@ mod tests {
         // Write an invalid utf8 byte
         temp_file.write_all(b"\xFF").unwrap();
 
-        assert!(is_text_file(temp_file.path()).unwrap());
+        temp_file.rewind().unwrap();
+
+        assert!(is_text_file(temp_file.as_file_mut()).unwrap());
     }
 
     #[test]
@@ -70,7 +70,9 @@ mod tests {
         // File with NUL 0x00
         temp_file.write_all(b"Hello\n\x00World\n").unwrap();
 
-        assert!(!is_text_file(temp_file.path()).unwrap());
+        temp_file.rewind().unwrap();
+
+        assert!(!is_text_file(temp_file.as_file_mut()).unwrap());
     }
 
     #[test]
@@ -80,7 +82,9 @@ mod tests {
         // File with invalid utf-8 0xFF
         temp_file.write_all(b"Hello\n\xFFWorld\n").unwrap();
 
-        assert!(!is_text_file(temp_file.path()).unwrap());
+        temp_file.rewind().unwrap();
+
+        assert!(!is_text_file(temp_file.as_file_mut()).unwrap());
     }
 
     #[test]
@@ -90,24 +94,16 @@ mod tests {
         // File with lone continuation byte 0x80
         temp_file.write_all(b"Hello\n\x80World\n").unwrap();
 
-        assert!(!is_text_file(temp_file.path()).unwrap());
+        temp_file.rewind().unwrap();
+
+        assert!(!is_text_file(temp_file.as_file_mut()).unwrap());
     }
 
     #[test]
     fn is_text_file_empty_file_returns_true() {
         // Empty file
-        let temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::new().unwrap();
 
-        assert!(is_text_file(temp_file.path()).unwrap());
-    }
-
-    #[test]
-    fn is_text_file_missing_file_returns_error() {
-        assert_eq!(
-            ErrorKind::NotFound,
-            is_text_file(Path::new("not_a_file.txt"))
-                .unwrap_err()
-                .kind()
-        );
+        assert!(is_text_file(temp_file.as_file_mut()).unwrap());
     }
 }
