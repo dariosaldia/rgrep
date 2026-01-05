@@ -17,10 +17,12 @@ pub fn is_text_file(file: &mut impl Read) -> io::Result<bool> {
     }
 
     // Take the relevant slice of bytes that were read from the file
-    let b = &buf[..bytes_read];
+    let relevant_bytes = &buf[..bytes_read];
 
     // Check for NUL byte or try converting to str
-    if b.iter().any(|b| b == &NUL_BYTE) || str::from_utf8(b).is_err() {
+    if relevant_bytes.iter().any(|byte| byte == &NUL_BYTE)
+        || str::from_utf8(relevant_bytes).is_err()
+    {
         return Ok(false);
     }
 
