@@ -1,7 +1,8 @@
 use rayon::prelude::*;
 use regex::Regex;
+use rgrep::sniff::is_text_file;
 use std::ffi::OsStr;
-use std::io::BufRead;
+use std::io::{BufRead, Seek};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::{env, fs, io};
@@ -96,13 +97,28 @@ fn scan_one_file<F>(test_match: &F, path: &Path)
 where
     F: Fn(&str) -> bool + Send + Sync + ?Sized,
 {
-    let file = match fs::File::open(path) {
+    let mut file = match fs::File::open(path) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Error opening file {}. {}", path.display(), e);
             return;
         }
     };
+
+    match is_text_file(&mut file) {
+        Err(e) => {
+            eprintln!("Error sniffing file {}. {}", path.display(), e);
+            return;
+        }
+        Ok(false) => return,
+        Ok(true) => {
+            if let Err(e) = file.rewind() {
+                eprintln!("Error on file rewind {}. {}", path.display(), e);
+                return;
+            }
+        }
+    }
+
     for line_attempt in io::BufReader::new(file).lines().enumerate() {
         let (number, line) = match line_attempt {
             (line_number, Ok(line)) => (line_number + 1, line),
