@@ -36,7 +36,7 @@ fn scan_one_file<F>(test_match: &F, path: &Path)
 where
     F: Fn(&str) -> bool + Send + Sync + ?Sized,
 {
-    let mut file = match fs::File::open(path) {
+    let mut file = match File::open(path) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Error opening file {}. {}", path.display(), e);
