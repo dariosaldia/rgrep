@@ -4,13 +4,15 @@ use std::fs::File;
 use std::io;
 use std::io::{BufRead, Seek};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 pub fn print_matches<F>(test_match: &F, files: &[PathBuf])
 where
     F: Fn(&str) -> bool + Send + Sync + ?Sized,
 {
+    let print_lock = Mutex::new(());
     files.par_iter().for_each(|path| {
-        scan_one_file(test_match, path.as_path());
+        scan_one_file(test_match, path.as_path(), &print_lock);
     });
 }
 
@@ -32,7 +34,7 @@ fn sniff_text_and_rewind(file: &mut File, path: &Path) -> bool {
     }
 }
 
-fn scan_one_file<F>(test_match: &F, path: &Path)
+fn scan_one_file<F>(test_match: &F, path: &Path, print_lock: &Mutex<()>)
 where
     F: Fn(&str) -> bool + Send + Sync + ?Sized,
 {
@@ -63,6 +65,17 @@ where
         };
 
         if test_match(&line) {
+            let _lock = match print_lock.lock() {
+                Ok(lock) => lock,
+                Err(e) => {
+                    eprintln!(
+                        "Error acquiring lock to print line. File {}. {}",
+                        path.display(),
+                        e
+                    );
+                    return;
+                }
+            };
             println!("{}:{}:{}", path.display(), number, line);
         }
     }
