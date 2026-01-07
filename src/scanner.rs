@@ -23,14 +23,13 @@ fn sniff_text_and_rewind(file: &mut File, path: &Path) -> bool {
             false
         }
         Ok(false) => false,
-        Ok(true) => {
-            if let Err(e) = file.rewind() {
+        Ok(true) => match file.rewind() {
+            Err(e) => {
                 eprintln!("Error on file rewind {}. {}", path.display(), e);
                 false
-            } else {
-                true
             }
-        }
+            Ok(_) => true,
+        },
     }
 }
 
