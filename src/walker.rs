@@ -2,6 +2,10 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
+fn is_hidden(file_name: &OsStr) -> bool {
+    file_name.to_string_lossy().starts_with('.')
+}
+
 pub fn collect_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     let mut files_result: Vec<PathBuf> = Vec::new();
 
@@ -51,4 +55,49 @@ pub fn collect_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     }
 
     Ok(files_result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_hidden_dotfile_returns_true() {
+        assert!(is_hidden(OsStr::new(".a")));
+    }
+
+    #[test]
+    fn is_hidden_dotgit_returns_true() {
+        assert!(is_hidden(OsStr::new(".git")));
+    }
+
+    #[test]
+    fn is_hidden_dotenv_returns_true() {
+        assert!(is_hidden(OsStr::new(".env")));
+    }
+
+    #[test]
+    fn is_hidden_single_dot_returns_true() {
+        assert!(is_hidden(OsStr::new(".")));
+    }
+
+    #[test]
+    fn is_hidden_double_dot_returns_true() {
+        assert!(is_hidden(OsStr::new("..")));
+    }
+
+    #[test]
+    fn is_hidden_plain_filename_returns_false() {
+        assert!(!is_hidden(OsStr::new("git")));
+    }
+
+    #[test]
+    fn is_hidden_dot_in_middle_returns_false() {
+        assert!(!is_hidden(OsStr::new("a.env")));
+    }
+
+    #[test]
+    fn is_hidden_empty_name_returns_false() {
+        assert!(!is_hidden(OsStr::new("")));
+    }
 }
