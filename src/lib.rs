@@ -35,6 +35,12 @@ pub fn run(config: Config) -> i32 {
         Box::new(move |line| line.contains(&config.pattern))
     };
 
-    print_matches(matcher.as_ref(), &files);
-    0
+    let (had_match, had_error) = print_matches(matcher.as_ref(), &files);
+    if had_error {
+        2
+    } else if had_match {
+        0
+    } else {
+        1
+    }
 }
